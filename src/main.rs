@@ -4,7 +4,6 @@ use std::time::Duration;
 use log::{debug, error, info, warn};
 use clap::{Parser};
 use paho_mqtt::AsyncClient;
-
 use std::convert::TryFrom;
 use matrix_sdk::{
   Client, SyncSettings, Result,
@@ -15,7 +14,7 @@ use matrix_sdk::{
 extern crate clap;
 
 #[derive(Parser, Clone)]
-#[clap(version = "0.2",
+#[clap(version = "0.2.0",
 author = "Paul Rogalinski-Pinter, matrix2mqtt@t00ltime.de",
 about = "forwards messages from matrix to mqtt")]
 struct Opts {
@@ -58,6 +57,7 @@ async fn main() -> Result<()> {
 
           let client = mqtt_client.clone();
           let sanitizer = |c| !r#"#/+"#.contains(c);
+
           async move {
             let room_name = match room.canonical_alias() {
               None => {
