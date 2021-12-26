@@ -29,3 +29,21 @@ OPTIONS:
     -V, --version                              Print version information
 ```
 
+## Building
+
+### Docker
+
+```
+❯ make help
+build                          builds the binary (./target/release/ws-to-mqtt)
+docker_image                   builds a docker container
+push_docker                    builds and and pushes the docker image
+push_multiarch_docker          experimental, builds and publishes docker images for i386, amd64 and arm64. prepare buildx environment using `docker buildx create --use`
+help                           print help
+```
+
+### Local Builds
+
+```
+cargo build --release
+```
