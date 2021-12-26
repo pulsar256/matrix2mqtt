@@ -14,7 +14,7 @@ use matrix_sdk::{
 extern crate clap;
 
 #[derive(Parser, Clone)]
-#[clap(version = "0.2.0",
+#[clap(version = "0.2.1",
 author = "Paul Rogalinski-Pinter, matrix2mqtt@t00ltime.de",
 about = "forwards messages from matrix to mqtt")]
 struct Opts {
@@ -42,11 +42,23 @@ async fn main() -> Result<()> {
   let opts: Opts = Opts::parse();
   setup_logger(&opts);
 
-  let matrix_user = UserId::try_from(opts.matrix_username.as_str())?;
+  if opts.matrix_username.is_empty() || opts.matrix_password.is_empty() {
+    error!("Missing matrix credentials.");
+    process::exit(1);
+  }
+
+  let matrix_user = UserId::try_from(opts.matrix_username.as_str()).unwrap_or_else(|error| {
+    error!("Invalid matrix user id, use a fully qualified representation (@user:server):\n{:?}",error);
+    process::exit(1);
+  });
+
   let matrix_client = Client::new_from_user_id(matrix_user.clone()).await?;
   let mqtt_client = Box::new(connect_mqtt(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
 
-  matrix_client.login(matrix_user.localpart(), opts.matrix_password.as_str(), None, None).await?;
+  matrix_client.login(matrix_user.localpart(), opts.matrix_password.as_str(), None, None).await.unwrap_or_else(|error| {
+    error!("could not connect to matrix:\n{:?}",error);
+    process::exit(1);
+  });
 
   matrix_client
     .register_event_handler(
