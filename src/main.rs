@@ -5,16 +5,13 @@ use log::{debug, error, info, warn};
 use clap::{Parser};
 use paho_mqtt::AsyncClient;
 use std::convert::TryFrom;
-use matrix_sdk::{
-  Client, SyncSettings, Result,
-  ruma::{UserId, events::{SyncMessageEvent, room::message::MessageEventContent, room::message::MessageType::Text}},
-  room::Room,
-};
+use matrix_sdk::{Client, SyncSettings, Result, ruma::{UserId, events::{SyncMessageEvent, room::message::MessageEventContent, room::message::MessageType::Text}}, room::Room};
+use matrix_sdk::event_handler::{RawEvent};
 
 extern crate clap;
 
 #[derive(Parser, Clone)]
-#[clap(version = "0.2.1",
+#[clap(version = "0.2.2",
 author = "Paul Rogalinski-Pinter, matrix2mqtt@t00ltime.de",
 about = "forwards messages from matrix to mqtt")]
 struct Opts {
@@ -52,7 +49,11 @@ async fn main() -> Result<()> {
     process::exit(1);
   });
 
-  let matrix_client = Client::new_from_user_id(matrix_user.clone()).await?;
+  let matrix_client = Client::new_from_user_id(matrix_user.clone()).await.unwrap_or_else(|error| {
+    error!("unable to infer a matrix client from username:\n{:?}",error);
+    process::exit(1);
+  });
+
   let mqtt_client = Box::new(connect_mqtt(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
 
   matrix_client.login(matrix_user.localpart(), opts.matrix_password.as_str(), None, None).await.unwrap_or_else(|error| {
@@ -60,54 +61,62 @@ async fn main() -> Result<()> {
     process::exit(1);
   });
 
+
   matrix_client
     .register_event_handler(
-      move |ev: SyncMessageEvent<MessageEventContent>,
-            room: Room|
-        {
-          debug!("Incoming message {:?} on room {:?}",ev,room);
+      move |ev: SyncMessageEvent<MessageEventContent>, room: Room, raw: RawEvent| {
+        debug!("Incoming message {:?} on room {:?}, raw event> {:?}",ev,room, raw);
 
-          let client = mqtt_client.clone();
-          let sanitizer = |c| !r#"#/+"#.contains(c);
+        let client = mqtt_client.clone();
+        let sanitizer = |c| !r#"#/+"#.contains(c);
 
-          async move {
-            let room_name = match room.canonical_alias() {
-              None => {
-                let mut room_id = String::from(room.room_id().as_str());
-                room_id.retain(sanitizer);
-                warn!("No canonical alias for room {:?} configured.",room_id);
-                room_id
-              }
-              Some(room_alias_id) => {
-                let mut room_id = String::from(room_alias_id.as_str());
-                room_id.retain(sanitizer);
-                room_id
-              }
-            };
+        async move {
+          let raw_event_json = raw.0.get();
+          let room_name = match room.canonical_alias() {
+            None => {
+              let mut room_id = String::from(room.room_id().as_str());
+              room_id.retain(sanitizer);
+              warn!("No canonical alias for room {:?} configured.",room_id);
+              room_id
+            }
+            Some(room_alias_id) => {
+              let mut room_id = String::from(room_alias_id.as_str());
+              room_id.retain(sanitizer);
+              room_id
+            }
+          };
 
-            let body: Option<String> = match ev.content.msgtype {
-              Text(ref text) => { Some(String::from(text.clone().body)) }
-              other => {
-                warn!("Non-Text message: {:?}, ignoring.",other);
-                None
-              }
-            };
+          let body: Option<String> = match ev.content.msgtype {
+            Text(ref text) => { Some(String::from(text.clone().body)) }
+            other => {
+              warn!("Non-Text message: {:?}, ignoring.",other);
+              None
+            }
+          };
 
-            match body {
-              None => {}
-              Some(body) => {
-                info!("forwarding to '{}' payload: '{}'", room_name, body);
-                client.publish(
-                  mqtt::MessageBuilder::new()
-                    .topic(format!("matrix2mqtt/{}", room_name))
-                    .payload(body)
-                    .retained(false)
-                    .qos(0)
-                    .finalize());
-              }
+          client.publish(
+            mqtt::MessageBuilder::new()
+              .topic(format!("matrix2mqtt/json/{}", room_name))
+              .payload(raw_event_json)
+              .retained(false)
+              .qos(0)
+              .finalize());
+
+          match body {
+            None => {}
+            Some(body) => {
+              info!("forwarding to '{}' payload: '{}'", room_name, body);
+              client.publish(
+                mqtt::MessageBuilder::new()
+                  .topic(format!("matrix2mqtt/text/{}", room_name))
+                  .payload(body)
+                  .retained(false)
+                  .qos(0)
+                  .finalize());
             }
           }
         }
+      }
     )
     .await;
 

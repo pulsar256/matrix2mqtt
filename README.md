@@ -3,10 +3,12 @@
 Connects the matrix network based on provided credentials, and forwards all text messages from all channels the user has joined to the configured mqtt server. Topic naming is derived from the room name:
 
 ```text
-matrix2mqtt/matrix_room_name
+matrix2mqtt/{$type}/${matrix_room_name}
 ```
 
-`matrix_room_name` is sanitized (#, / and + are stripped). If possible, the cannonical room alias is used instead of the internal matrix room id.
+`${type}` is either `text` or `json`. Payload is respectively either the extracted text value from the chat message or the whole, unprocessed json payload. If the event type is `text`, both topics will be populated, otherwise json will be used.
+
+`${matrix_room_name}` is sanitized (#, / and + are stripped). If possible, the cannonical room alias is used instead of the internal matrix room id.
 
 ## Usage:
 
