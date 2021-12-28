@@ -2,7 +2,7 @@ use std::{env};
 use clap::{Parser};
 
 #[derive(Parser, Clone)]
-#[clap(version = "0.2.3",
+#[clap(version = "0.2.4",
 author = "Paul Rogalinski-Pinter, matrix2mqtt@t00ltime.de",
 about = "forwards messages from matrix to mqtt")]
 pub struct CommandlineOpts {
@@ -37,5 +37,11 @@ impl CommandlineOpts {
       }
     }
     env_logger::init();
+  }
+
+  pub fn parse_and_setup_logger() -> Self {
+    let opts = Self::parse();
+    opts.setup_logger();
+    opts
   }
 }

@@ -2,10 +2,8 @@ use paho_mqtt as mqtt;
 use std::{process};
 use std::time::Duration;
 use log::{debug, error, info, warn};
-use clap::{Parser};
 use paho_mqtt::AsyncClient;
 use std::convert::TryFrom;
-use std::rc::Rc;
 use std::sync::Arc;
 use matrix_sdk::{Client, SyncSettings, Result, ruma::{UserId, events::{SyncMessageEvent, room::message::MessageEventContent, room::message::MessageType::Text}}, room::Room};
 use matrix_sdk::event_handler::{RawEvent};
@@ -15,27 +13,24 @@ mod commandline_opts;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  let opts: CommandlineOpts = CommandlineOpts::parse();
-  opts.setup_logger();
-
+  let opts: CommandlineOpts = CommandlineOpts::parse_and_setup_logger();
   let matrix_client = create_matrix_client(&opts).await;
   let mqtt_client = Arc::new(create_mqtt_client(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
 
   matrix_client
     .register_event_handler(
-      move |ev: SyncMessageEvent<MessageEventContent>, room: Room, raw: RawEvent| {
-        debug!("Incoming message {:?} on room {:?}, raw event> {:?}",ev,room, raw);
+      move |sync_message_event: SyncMessageEvent<MessageEventContent>, room: Room, raw_event: RawEvent| {
+        debug!("Incoming message {:?} on room {:?}, raw event> {:?}",sync_message_event,room, raw_event);
 
         let local_mqtt_client = mqtt_client.clone();
         let sanitizer = |c| !r#"#/+"#.contains(c);
 
         async move {
-          let raw_event_json = raw.0.get();
           let room_name = match room.canonical_alias() {
             None => {
               let mut room_id = String::from(room.room_id().as_str());
-              room_id.retain(sanitizer);
               warn!("No canonical alias for room {:?} configured.",room_id);
+              room_id.retain(sanitizer);
               room_id
             }
             Some(room_alias_id) => {
@@ -45,21 +40,21 @@ async fn main() -> Result<()> {
             }
           };
 
-          let body: Option<String> = match ev.content.msgtype {
+          local_mqtt_client.publish(
+            mqtt::MessageBuilder::new()
+              .topic(format!("matrix2mqtt/json/{}", room_name))
+              .payload(raw_event.0.get())
+              .retained(false)
+              .qos(0)
+              .finalize());
+
+          let body: Option<String> = match sync_message_event.content.msgtype {
             Text(ref text) => { Some(String::from(text.clone().body)) }
             other => {
               warn!("Non-Text message: {:?}, ignoring.",other);
               None
             }
           };
-
-          local_mqtt_client.publish(
-            mqtt::MessageBuilder::new()
-              .topic(format!("matrix2mqtt/json/{}", room_name))
-              .payload(raw_event_json)
-              .retained(false)
-              .qos(0)
-              .finalize());
 
           match body {
             None => {}
@@ -104,9 +99,7 @@ async fn create_matrix_client(opts: &CommandlineOpts) -> Client {
   matrix_client
 }
 
-
 fn create_mqtt_client(host: &str, username: &str, password: &str) -> AsyncClient {
-  info!("connecting to mqtt {}",host);
   let mqtt_client = mqtt::AsyncClient::new(host).unwrap_or_else(|err| {
     error!("Error creating the mqtt client: {:?}", err);
     process::exit(1);
@@ -125,6 +118,5 @@ fn create_mqtt_client(host: &str, username: &str, password: &str) -> AsyncClient
     error!("could not connect to mqtt: {:?}", err);
     process::exit(1);
   });
-
   mqtt_client
 }
