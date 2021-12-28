@@ -1,5 +1,5 @@
 use paho_mqtt as mqtt;
-use std::{env, process};
+use std::{process};
 use std::time::Duration;
 use log::{debug, error, info, warn};
 use clap::{Parser};
@@ -7,67 +7,24 @@ use paho_mqtt::AsyncClient;
 use std::convert::TryFrom;
 use matrix_sdk::{Client, SyncSettings, Result, ruma::{UserId, events::{SyncMessageEvent, room::message::MessageEventContent, room::message::MessageType::Text}}, room::Room};
 use matrix_sdk::event_handler::{RawEvent};
+use commandline_opts::CommandlineOpts;
 
-extern crate clap;
-
-#[derive(Parser, Clone)]
-#[clap(version = "0.2.2",
-author = "Paul Rogalinski-Pinter, matrix2mqtt@t00ltime.de",
-about = "forwards messages from matrix to mqtt")]
-struct Opts {
-  #[clap(long, default_value = "tcp://mqtt.localdomain:1883", env = "MQTT_HOST")]
-  mqtt_host: String,
-
-  #[clap(long, help = "If left empty, no authentication will be used", default_value = "", env = "MQTT_USERNAME")]
-  mqtt_username: String,
-
-  #[clap(long, default_value = "", env = "MQTT_PASSWORD")]
-  mqtt_password: String,
-
-  #[clap(long, default_value = "", env = "MATRIX_USERNAME")]
-  matrix_username: String,
-
-  #[clap(long, default_value = "", env = "MATRIX_PASSWORD")]
-  matrix_password: String,
-
-  #[clap(short, help = "verbose output if not specified otherwise by the RUST_LOG environment variable.", env = "DEBUG")]
-  verbose: bool,
-}
+mod commandline_opts;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  let opts: Opts = Opts::parse();
-  setup_logger(&opts);
+  let opts: CommandlineOpts = CommandlineOpts::parse();
+  opts.setup_logger();
 
-  if opts.matrix_username.is_empty() || opts.matrix_password.is_empty() {
-    error!("Missing matrix credentials.");
-    process::exit(1);
-  }
-
-  let matrix_user = UserId::try_from(opts.matrix_username.as_str()).unwrap_or_else(|error| {
-    error!("Invalid matrix user id, use a fully qualified representation (@user:server):\n{:?}",error);
-    process::exit(1);
-  });
-
-  let matrix_client = Client::new_from_user_id(matrix_user.clone()).await.unwrap_or_else(|error| {
-    error!("unable to infer a matrix client from username:\n{:?}",error);
-    process::exit(1);
-  });
-
-  let mqtt_client = Box::new(connect_mqtt(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
-
-  matrix_client.login(matrix_user.localpart(), opts.matrix_password.as_str(), None, None).await.unwrap_or_else(|error| {
-    error!("could not connect to matrix:\n{:?}",error);
-    process::exit(1);
-  });
-
+  let matrix_client = create_matrix_client(&opts).await;
+  let mqtt_client = Box::new(create_mqtt_client(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
 
   matrix_client
     .register_event_handler(
       move |ev: SyncMessageEvent<MessageEventContent>, room: Room, raw: RawEvent| {
         debug!("Incoming message {:?} on room {:?}, raw event> {:?}",ev,room, raw);
 
-        let client = mqtt_client.clone();
+        let local_mqtt_client = mqtt_client.clone();
         let sanitizer = |c| !r#"#/+"#.contains(c);
 
         async move {
@@ -94,7 +51,7 @@ async fn main() -> Result<()> {
             }
           };
 
-          client.publish(
+          local_mqtt_client.publish(
             mqtt::MessageBuilder::new()
               .topic(format!("matrix2mqtt/json/{}", room_name))
               .payload(raw_event_json)
@@ -106,7 +63,7 @@ async fn main() -> Result<()> {
             None => {}
             Some(body) => {
               info!("forwarding to '{}' payload: '{}'", room_name, body);
-              client.publish(
+              local_mqtt_client.publish(
                 mqtt::MessageBuilder::new()
                   .topic(format!("matrix2mqtt/text/{}", room_name))
                   .payload(body)
@@ -125,20 +82,28 @@ async fn main() -> Result<()> {
   Ok(())
 }
 
-fn setup_logger(opts: &Opts) {
-  if opts.verbose {
-    if env::var("RUST_LOG").is_err() {
-      env::set_var("RUST_LOG", "debug")
-    }
-  } else {
-    if env::var("RUST_LOG").is_err() {
-      env::set_var("RUST_LOG", "info")
-    }
+async fn create_matrix_client(opts: &CommandlineOpts) -> Client {
+  if opts.matrix_username.is_empty() || opts.matrix_password.is_empty() {
+    error!("Missing matrix credentials.");
+    process::exit(1);
   }
-  env_logger::init();
+  let matrix_user = UserId::try_from(opts.matrix_username.as_str()).unwrap_or_else(|error| {
+    error!("Invalid matrix user id, use a fully qualified representation (@user:server):\n{:?}",error);
+    process::exit(1);
+  });
+  let matrix_client = Client::new_from_user_id(matrix_user.clone()).await.unwrap_or_else(|error| {
+    error!("unable to infer a matrix client from username:\n{:?}",error);
+    process::exit(1);
+  });
+  matrix_client.login(matrix_user.localpart(), opts.matrix_password.as_str(), None, None).await.unwrap_or_else(|error| {
+    error!("could not connect to matrix:\n{:?}",error);
+    process::exit(1);
+  });
+  matrix_client
 }
 
-fn connect_mqtt(host: &str, username: &str, password: &str) -> AsyncClient {
+
+fn create_mqtt_client(host: &str, username: &str, password: &str) -> AsyncClient {
   info!("connecting to mqtt {}",host);
   let mqtt_client = mqtt::AsyncClient::new(host).unwrap_or_else(|err| {
     error!("Error creating the mqtt client: {:?}", err);
