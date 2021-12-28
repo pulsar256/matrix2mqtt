@@ -5,6 +5,8 @@ use log::{debug, error, info, warn};
 use clap::{Parser};
 use paho_mqtt::AsyncClient;
 use std::convert::TryFrom;
+use std::rc::Rc;
+use std::sync::Arc;
 use matrix_sdk::{Client, SyncSettings, Result, ruma::{UserId, events::{SyncMessageEvent, room::message::MessageEventContent, room::message::MessageType::Text}}, room::Room};
 use matrix_sdk::event_handler::{RawEvent};
 use commandline_opts::CommandlineOpts;
@@ -17,7 +19,7 @@ async fn main() -> Result<()> {
   opts.setup_logger();
 
   let matrix_client = create_matrix_client(&opts).await;
-  let mqtt_client = Box::new(create_mqtt_client(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
+  let mqtt_client = Arc::new(create_mqtt_client(opts.mqtt_host.as_str(), opts.mqtt_username.as_str(), opts.mqtt_password.as_str()));
 
   matrix_client
     .register_event_handler(

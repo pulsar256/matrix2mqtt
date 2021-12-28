@@ -2,7 +2,7 @@ use std::{env};
 use clap::{Parser};
 
 #[derive(Parser, Clone)]
-#[clap(version = "0.2.2",
+#[clap(version = "0.2.3",
 author = "Paul Rogalinski-Pinter, matrix2mqtt@t00ltime.de",
 about = "forwards messages from matrix to mqtt")]
 pub struct CommandlineOpts {
