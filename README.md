@@ -16,6 +16,18 @@ matrix2mqtt/{$type}/${matrix_room_name}
 
 ## Usage:
 
+### Docker
+
+```shell
+
+docker run --rm \
+  -e MATRIX_PASSWORD=muchsecritverysecure \
+  -e MATRIX_USERNAME=@arthur_dent:earth.milkyway.euclid \
+  -e MQTT_HOST=mqtt  \
+  pulsar256/matrix2mqtt
+```
+
+### Standalone
 ```text
 > matrix2mqtt [OPTIONS]
 
@@ -33,6 +45,12 @@ OPTIONS:
 ## Building
 
 ### Docker
+
+```shell
+docker build . -t whatever
+```
+
+or use the `docker_image` Make target.
 
 ```
 ❯ make help
