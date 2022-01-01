@@ -144,7 +144,8 @@ fn create_mqtt_client(host: &str, username: &str, password: &str) -> AsyncClient
     let mut builder = mqtt::ConnectOptionsBuilder::new();
     builder
         .keep_alive_interval(Duration::from_secs(20))
-        .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(60))
+        .automatic_reconnect(Duration::from_secs(1),
+                             Duration::from_secs(60))
         .clean_session(true);
 
     if !username.is_empty() {

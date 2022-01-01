@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 log = "0.4.14"
 env_logger = "0.8.4"
-clap = { version = "3.0.0-rc.8", features = ["std", "suggestions", "color", "env", "wrap_help", "derive"] }
+clap = { version = "3.0.0", features = ["std", "suggestions", "color", "env", "wrap_help", "derive"] }
 paho-mqtt = "0.9.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
