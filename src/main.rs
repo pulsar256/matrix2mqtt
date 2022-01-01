@@ -41,23 +41,24 @@ async fn main() -> Result<()> {
                 );
 
                 let local_mqtt_client = mqtt_client.clone();
-                let sanitizer = |c| !r#"#/+"#.contains(c);
+                let channel_name_sanatizer = |c| !r#"#/+"#.contains(c);
 
                 async move {
                     let room_name = match room.canonical_alias() {
                         None => {
                             let mut room_id = String::from(room.room_id().as_str());
                             warn!("No canonical alias for room {:?} configured.", room_id);
-                            room_id.retain(sanitizer);
+                            room_id.retain(channel_name_sanatizer);
                             room_id
                         }
                         Some(room_alias_id) => {
                             let mut room_id = String::from(room_alias_id.as_str());
-                            room_id.retain(sanitizer);
+                            room_id.retain(channel_name_sanatizer);
                             room_id
                         }
                     };
 
+                    // always publish the raw json message onto the channel name topid
                     local_mqtt_client.publish(
                         mqtt::MessageBuilder::new()
                             .topic(format!("matrix2mqtt/json/{}", room_name))
@@ -67,17 +68,10 @@ async fn main() -> Result<()> {
                             .finalize(),
                     );
 
-                    let body: Option<String> = match sync_message_event.content.msgtype {
-                        Text(ref text) => Some(String::from(text.clone().body)),
-                        other => {
-                            warn!("Non-Text message: {:?}, ignoring.", other);
-                            None
-                        }
-                    };
-
-                    match body {
-                        None => {}
-                        Some(body) => {
+                    // ... and maybe publish the (plain) text message content on the matching topic. Formatted messages will render as '' at the moment
+                    match sync_message_event.content.msgtype {
+                        Text(ref text) => {
+                            let body = String::from(text.clone().body);
                             info!("forwarding to '{}' payload: '{}'", room_name, body);
                             local_mqtt_client.publish(
                                 mqtt::MessageBuilder::new()
@@ -88,6 +82,9 @@ async fn main() -> Result<()> {
                                     .finalize(),
                             );
                         }
+                        other => {
+                            warn!("Non-Text message: {:?}, ignoring.", other);
+                        }
                     }
                 }
             },
@@ -96,6 +93,8 @@ async fn main() -> Result<()> {
 
     // enters the sync-loop, does not resolve.
     matrix_client.sync(SyncSettings::default()).await;
+
+    // compiler happy? should not ever execute.
     Ok(())
 }
 
@@ -144,8 +143,7 @@ fn create_mqtt_client(host: &str, username: &str, password: &str) -> AsyncClient
     let mut builder = mqtt::ConnectOptionsBuilder::new();
     builder
         .keep_alive_interval(Duration::from_secs(20))
-        .automatic_reconnect(Duration::from_secs(1),
-                             Duration::from_secs(60))
+        .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(60))
         .clean_session(true);
 
     if !username.is_empty() {
