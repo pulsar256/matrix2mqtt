@@ -45,14 +45,14 @@ async fn main() -> Result<()> {
 
                 async move {
                     let room_name = match room.canonical_alias() {
-                        None => {
-                            let mut room_id = String::from(room.room_id().as_str());
-                            warn!("No canonical alias for room {:?} configured.", room_id);
+                        Some(room_alias_id) => {
+                            let mut room_id = String::from(room_alias_id.as_str());
                             room_id.retain(channel_name_sanatizer);
                             room_id
                         }
-                        Some(room_alias_id) => {
-                            let mut room_id = String::from(room_alias_id.as_str());
+                        None => {
+                            let mut room_id = String::from(room.room_id().as_str());
+                            warn!("No canonical alias for room {:?} configured.", room_id);
                             room_id.retain(channel_name_sanatizer);
                             room_id
                         }
